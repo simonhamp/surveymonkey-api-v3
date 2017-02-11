@@ -67,27 +67,26 @@ class SurveyMonkey
     /**
      * The SurveyMonkey Constructor.
      *
-     * This method is used to create a new SurveyMonkey object with a connection to a
-     * specific api key and access token
+     * This method is used to create a new SurveyMonkey object with a connection via a
+     * specific access token
      *
-     * @param string $apiKey A valid api key
      * @param string $accessToken A valid access token
      * @param array $options (optional) An array of options
      * @param array $connectionOptions (optional) cURL connection options
      * @throws SurveyMonkey_Exception If an error occurs creating the instance.
      * @return SurveyMonkey A unique SurveyMonkey instance.
      */
-    public function __construct($apiKey, $accessToken, $options = array(), $connectionOptions = array())
+    public function __construct($accessToken, $options = array(), $connectionOptions = array())
     {
-        if (empty($apiKey)) {
-            throw new SurveyMonkey_Exception('Missing apiKey');
-        }
+//        if (empty($apiKey)) {
+//            throw new SurveyMonkey_Exception('Missing apiKey');
+//        }
 
         if (empty($accessToken)) {
-            throw new SurveyMonkey_Exception('Missing accessToken');
+            throw new SurveyMonkey_Exception('Couldn\'t find your SurveyMonkey Access Token');
         }
 
-        $this->_apiKey = $apiKey;
+        //$this->_apiKey = $apiKey;
         $this->_accessToken = $accessToken;
 
         $this->_protocol = (!empty($options['protocol'])) ? $options['protocol'] : 'https';
@@ -100,13 +99,15 @@ class SurveyMonkey
     /**
      * Return an error
      * @param string $msg Error message
+     * @param string $request_url Crafted request URL
      * @return array Result
      */
-    protected function failure($msg)
+    protected function failure($msg, $request_url)
     {
         return array(
             'success' => false,
-            'message' => $msg
+            'message' => $msg,
+            'request' => $request_url
         );
     }
 
@@ -140,7 +141,7 @@ class SurveyMonkey
      */
     protected function buildUri($method)
     {
-        return $this->_protocol . '://' . $this->_hostname . '/' . $this->_version . '/' . $method . '?api_key=' . $this->_apiKey;
+        return $this->_protocol . '://' . $this->_hostname . '/' . $this->_version . '/' . $method;
     }
 
     /**
@@ -149,10 +150,10 @@ class SurveyMonkey
      * @param array $params Parameters array
      * @return string $uri
      */
-    protected function parametersGETRequest($uri, $params)
+    protected function parametersGETRequest($uri, $params = [])
     {
-        foreach ($params as $key => $param) {
-            $uri .= '&' . $key . '=' . $param;
+        if ( !empty( $params ) && strpos( $uri, '?' ) === false ) {
+            $uri .= '?'.http_build_query($params);
         }
 
         return $uri;
@@ -175,7 +176,7 @@ class SurveyMonkey
     protected function run($method, $params = array(), $type)
     {
         if (!is_resource($this->conn) && !$this->getConnection()) {
-            return $this->failure('Can not initialize connection');
+            return $this->failure('Can not initialize connection', '');
         }
 
         $request_url = $this->buildUri($method);
@@ -193,7 +194,7 @@ class SurveyMonkey
 
         curl_setopt($this->conn, CURLOPT_URL, $request_url);  // URL to request to
         curl_setopt($this->conn, CURLOPT_RETURNTRANSFER, 1);   // return into a variable
-        $headers = array('Content-type: application/json', 'Authorization: Bearer ' . $this->_accessToken);
+        $headers = array('Content-type: application/json', 'Authorization:bearer ' . $this->_accessToken);
         curl_setopt($this->conn, CURLOPT_HTTPHEADER, $headers); // custom headers
         curl_setopt($this->conn, CURLOPT_HEADER, false);     // return into a variable
         curl_setopt_array($this->conn, $this->_connectionOptions);  // (optional) additional options
@@ -201,13 +202,13 @@ class SurveyMonkey
         $result = curl_exec($this->conn);
 
         if ($result === false) {
-            return $this->failure('Curl Error: ' . curl_error($this->conn));
+            return $this->failure('Curl Error: ' . curl_error($this->conn), $request_url);
         }
 
         $responseCode = curl_getinfo($this->conn, CURLINFO_HTTP_CODE);
 
         if ($responseCode != self::HTTP_RESPONSE_CODE_SUCCESS && $responseCode != self::HTTP_RESPONSE_CODE_SUCCESS_CREATION) {
-            return $this->failure('Error [' . $responseCode . ']: ' . $result);
+            return $this->failure('Error [' . $responseCode . ']: ' . $result, $request_url);
         }
 
         $this->closeConnection();
@@ -216,7 +217,7 @@ class SurveyMonkey
         $jsonErr = json_last_error();
 
         if ($parsedResult === null && $jsonErr !== JSON_ERROR_NONE) {
-            return $this->failure("Error [$jsonErr] parsing result JSON");
+            return $this->failure("Error [$jsonErr] parsing result JSON", $request_url);
         }
 
         return $this->success($parsedResult);
